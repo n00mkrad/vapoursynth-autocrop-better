@@ -12,6 +12,8 @@ Search only
 acrop.CropValues(clip src, int[] max_crop=16, int[] ref_color=[0,127,127], float[] max_color_deviation=0.0, int[] pad=0, int[] mod=2, int roundup=False)
 ```
 
+Detected crop values are stored as integer frame properties named `CropLeftValue`, `CropRightValue`, `CropTopValue`, `CropBottomValue`.
+
 `max_crop` limits how far the border search can scan into the frame. It accepts either one value for all sides or four values in left, right, top, bottom order. Values must be compatible with the clip subsampling.
 
 `ref_color` uses 8-bit-style sample values and is scaled to the bit depth of the input clip. It accepts either one value or one value per clip plane. On YUV and YCoCg clips, a single value sets the luma plane and uses neutral chroma values of 127. On GRAY clips, only the first plane is used.
