@@ -9,10 +9,12 @@ acrop.AutoCrop(clip src, int[] max_crop=16, int[] ref_color=[0,127,127], float[]
 
 Search only  
 ```python
-acrop.CropValues(clip src, int[] max_crop=16, int[] ref_color=[0,127,127], float[] max_color_deviation=0.0, int[] pad=0, int[] mod=2, int roundup=False)
+acrop.CropValues(clip src, int[] max_crop=16, int[] ref_color=[0,127,127], float[] max_color_deviation=0.0, int[] pad=0, int[] mod=2, int roundup=False, int debug=False)
 ```
 
 Detected crop values are stored as integer frame properties named `CropLeftValue`, `CropRightValue`, `CropTopValue`, `CropBottomValue`.
+
+When `debug=True`, `CropValues` also stores the input frame's edge midpoint colors in the integer-array frame properties `DebugLeftColor`, `DebugRightColor`, `DebugTopColor`, and `DebugBottomColor`. The sampled luma coordinates are `(0, height / 2)`, `(width - 1, height / 2)`, `(width / 2, 0)`, and `(width / 2, height - 1)`, using integer division. Each array contains one native sample value per plane in plane order, such as Y, U, V for YUV. Chroma coordinates are shifted according to the format's subsampling, and values retain the input clip's native bit depth.
 
 `max_crop` limits how far the border search can scan into the frame. It accepts either one value for all sides or four values in left, right, top, bottom order. Values must be compatible with the clip subsampling.
 

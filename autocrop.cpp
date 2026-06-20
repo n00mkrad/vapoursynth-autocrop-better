@@ -25,6 +25,7 @@ typedef struct {
     int pad[sideCount];
     int mod[sideCount];
     bool roundup;
+    bool debug;
 } AutoCropData;
 
 struct CropPlaneValues {
@@ -41,6 +42,13 @@ struct CropFrameValues {
     int right;
     int width;
     int height;
+};
+
+struct EdgeColorValues {
+    int64_t left[3];
+    int64_t right[3];
+    int64_t top[3];
+    int64_t bottom[3];
 };
 
 int checkSubSampling(int cropValueArray[3], int subSampling, int numPlanes){
@@ -323,6 +331,28 @@ void getFramePlane(const VSFrameRef *src, AutoCropData *data, const VSAPI *vsapi
     cFrame->width    = data->vi->width - cFrame->left - cFrame->right;
 }
 
+template <typename Bit>
+void getEdgeColorValues(const VSFrameRef *src, const VSVideoInfo *vi, const VSAPI *vsapi, EdgeColorValues *colors) {
+    const VSFormat *format = vi->format;
+    int leftY = vi->height / 2;
+    int rightX = vi->width - 1;
+    int topX = vi->width / 2;
+    int bottomY = vi->height - 1;
+
+    for (int plane = 0; plane < format->numPlanes; plane++) {
+        int horizontalShift = plane ? format->subSamplingW : 0;
+        int verticalShift = plane ? format->subSamplingH : 0;
+        int stride = vsapi->getStride(src, plane) / sizeof(Bit);
+        const auto *srcp = reinterpret_cast<const Bit *>(vsapi->getReadPtr(src, plane));
+
+        // Convert the luma edge coordinates to the corresponding plane coordinates.
+        colors->left[plane] = srcp[(leftY >> verticalShift) * stride];
+        colors->right[plane] = srcp[(rightX >> horizontalShift) + (leftY >> verticalShift) * stride];
+        colors->top[plane] = srcp[topX >> horizontalShift];
+        colors->bottom[plane] = srcp[(topX >> horizontalShift) + (bottomY >> verticalShift) * stride];
+    }
+}
+
 /////////////////
 // CropValues
 
@@ -347,11 +377,18 @@ static const VSFrameRef *VS_CC cropValuesGetFrame(int n, int activationReason, v
         const VSFrameRef *src = vsapi->getFrameFilter(n, data->node, frameCtx);
         const VSFormat *fi = data->vi->format;
         CropFrameValues cFrame{};
+        EdgeColorValues edgeColors{};
 
         if (data->vi->format->sampleType == stInteger && data->vi->format->bitsPerSample == 8) {
             getFramePlane<uint8_t>(src, data, vsapi, &cFrame);
+            if (data->debug) {
+                getEdgeColorValues<uint8_t>(src, data->vi, vsapi, &edgeColors);
+            }
         } else if (data->vi->format->sampleType == stInteger && data->vi->format->bitsPerSample <= 16){
             getFramePlane<uint16_t>(src, data, vsapi, &cFrame);
+            if (data->debug) {
+                getEdgeColorValues<uint16_t>(src, data->vi, vsapi, &edgeColors);
+            }
         }
 
         VSFrameRef *dst = vsapi->copyFrame(src, core);
@@ -366,6 +403,12 @@ static const VSFrameRef *VS_CC cropValuesGetFrame(int n, int activationReason, v
             vsapi->propSetInt(dstProps, bottom, cFrame.bottom, paAppend);
             vsapi->propSetInt(dstProps, left, cFrame.left, paAppend);
             vsapi->propSetInt(dstProps, right, cFrame.right, paAppend);
+        }
+        if (data->debug) {
+            vsapi->propSetIntArray(dstProps, "DebugLeftColor", edgeColors.left, fi->numPlanes);
+            vsapi->propSetIntArray(dstProps, "DebugRightColor", edgeColors.right, fi->numPlanes);
+            vsapi->propSetIntArray(dstProps, "DebugTopColor", edgeColors.top, fi->numPlanes);
+            vsapi->propSetIntArray(dstProps, "DebugBottomColor", edgeColors.bottom, fi->numPlanes);
         }
         vsapi->freeFrame(src);
 
@@ -412,6 +455,11 @@ static void VS_CC cropValuesCreate(const VSMap *in, VSMap *out, void *userData, 
     if (!parseCropAdjustments(in, out, &d, vsapi, "CropValues")) {
         vsapi->freeNode(d.node);
         return;
+    }
+    int err;
+    d.debug = vsapi->propGetInt(in, "debug", 0, &err) != 0;
+    if (err) {
+        d.debug = false;
     }
 
     data = static_cast<AutoCropData*>(malloc(sizeof(d)));
@@ -507,6 +555,7 @@ static void VS_CC autocropCreate(const VSMap *in, VSMap *out, void *userData, VS
         vsapi->freeNode(d.node);
         return;
     }
+    d.debug = false;
     data = static_cast<AutoCropData*>(malloc(sizeof(d)));
     *data = d;
 
@@ -519,5 +568,5 @@ static void VS_CC autocropCreate(const VSMap *in, VSMap *out, void *userData, VS
 VS_EXTERNAL_API(void) VapourSynthPluginInit(VSConfigPlugin configFunc, VSRegisterFunction registerFunc, VSPlugin *plugin) {
     configFunc("moe.infi.autocrop", "acrop", "VapourSynth AutoCrop", VAPOURSYNTH_API_VERSION, 1, plugin);
     registerFunc("AutoCrop", "clip:clip;max_crop:int[]:opt;ref_color:int[]:opt;max_color_deviation:float[]:opt;pad:int[]:opt;mod:int[]:opt;roundup:int:opt", autocropCreate, 0, plugin);
-    registerFunc("CropValues", "clip:clip;max_crop:int[]:opt;ref_color:int[]:opt;max_color_deviation:float[]:opt;pad:int[]:opt;mod:int[]:opt;roundup:int:opt", cropValuesCreate, 0, plugin);
+    registerFunc("CropValues", "clip:clip;max_crop:int[]:opt;ref_color:int[]:opt;max_color_deviation:float[]:opt;pad:int[]:opt;mod:int[]:opt;roundup:int:opt;debug:int:opt", cropValuesCreate, 0, plugin);
 }
